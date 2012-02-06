@@ -1,0 +1,24 @@
+RHOD-NAND-CWM-V6 from tiad8
+
+Credit: ACL for his nand recovery
+
+chnage log
+-added support for nand backup and restore works 100%
+
+code:
+#!/sbin/sh
+cd $1
+rm -f /tmp/nandroid.md5
+md5sum * .* > /tmp/nandroid.md5
+cp /tmp/nandroid.md5 .
+# need this because wildcard seems to cause md5sum to return 1
+if [ -f nandroid.md5 ]
+then
+  return 0
+else
+  return 1
+fi
+
+-this is a full working cwm for rhodium tp2. work on GSM & CDMA rhod devices
+
+

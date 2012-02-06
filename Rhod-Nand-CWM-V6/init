@@ -1,0 +1,127 @@
+#!/sbin/sh
+fail() {
+    echo "$1"
+    sync
+    exec sh
+}
+doLog() {
+
+echo "Give me NAND or give me death !! -acl"
+mkdir -m 0755 /proc
+mount -t proc proc /proc
+mkdir -m 0755 /sys
+mount -t sysfs sys /sys
+mkdir -m 0777 /sdcard
+chmod 0755 /system
+mkdir -m 0755 /data
+chown 1000:1000 /data
+mkdir -m 0755 /cache
+chown 1000:1000 /cache
+mkdir -m 0755 /tmp
+mkdir -m 0755 /recovery
+
+#Configure Devices
+/sbin/MAKEDEVS
+
+REASON=`cat /proc/bootcheck`
+echo "Boot Reason $REASON"
+if [ "$REASON" = "POWERON_CHARGING" ] ; then
+	echo "We are good to charge"
+	echo 0 > /proc/sys/kernel/hung_task_timeout_secs
+	exec /sbin/charger
+fi
+
+#internet speed tweaks,vm management tweaks, and battery tweaks 
+echo 1024 > /sys/devices/virtual/bdi/179:0/read_ahead_kb
+echo 7 > /proc/sys/vm/laptop_mode
+echo 90 > /proc/sys/vm/dirty_ratio
+echo 60000 > /proc/sys/vm/dirty_expire_centisecs
+echo 60000 > /proc/sys/vm/dirty_writeback_centisecs
+
+        if [ -d $card/AndroidApps ] ; then
+        echo Copying Applications
+        if [ ! -d /data/app ] ; then
+                mkdir -m 0775 /data/app
+		chown -R 1000:1000 /data/app
+        fi
+	(cd $card/npkboot/AndroidApps; for i in *; do if [ ! -f "/data/app/$i" -o "$i" -nt "/data/app/$i" ]; then \
+		cp "$i" /data/app; fi done)
+fi
+
+if [ ! -d $card/media ] ; then
+        echo You have no media folder, please extract the media to your SD card MEDIA folder
+fi
+if [ ! -d $card/mp3 ] ; then
+        echo You have no mp3 folder, please extract the mp3 to your SD card MP3 folder
+fi
+if [ ! -d /data/app ] ; then
+                mkdir -m 0775 /data/app		
+fi
+chown -R 1000:1000 /data/app
+if [ ! -d /data/app-private ] ; then
+                mkdir -m 0775 /data/app-private
+fi
+chown -R 1000:1000 /data/app-private
+
+# echo /dev/block/mmcblk0p2 > /sys/devices/platform/usb_mass_storage/lun0/file
+ifconfig usb0 192.168.20.1 up
+/system/bin/busybox /sbin/telnetd -b 192.168.20.1 -l /system/bin/sh
+#chmod 4755 /bin/su
+#mkdir -m 0777 /smodem
+mknod /dev/urandom c 1 9
+if [ -d /data/dropbear/ ] ; then
+	echo "Starting SSH"
+	mknod /dev/random c 1 8
+	/bin/dropbear -r /data/dropbear/dropbear_rsa_host_key -s
+fi
+
+KBD=`sed 's/.*physkeyboard=\([0-9a-z_]*\).*/\1/' /sys/class/htc_hw/machine_variant`
+cp /system/etc/keymaps/default/*.kl /system/usr/keylayout/
+cp /system/etc/keymaps/default/*.kcm* /system/usr/keychars/
+if [ -d "/init.etc/keymaps/$KBD" ]
+then
+	cp /system/etc/keymaps/"$KBD"/*.kl /system/usr/keylayout/
+	cp /system/etc/keymaps/"$KBD"/*.kcm* /system/usr/keychars/
+fi
+
+cp -af /system/usr/keychars/microp-keypad.kcm.bin /system/usr/keychars/qwerty.kcm.bin
+
+for i in /sys/class/input/input* ; do
+        if [ "`cat $i/name`" = "tssc-manager" ] ; then
+                touchscreendir=$i
+                echo "Touchscreen device directory is $i"
+        fi
+done
+
+## Ts Calibration
+for i in /sys/class/input/input* ; do
+        if [ "`cat $i/name`" = "tssc-manager" ] ; then
+                touchscreendir=$i
+                echo "Touchscreen device directory is $i"
+        fi
+done
+
+if [ -f /data/ts-calibration ] ; then
+        echo "Using Saved Touchscreen Calibration"
+        echo 128,128,1903,128,128,1907,1903,1907,1024,1024 > $touchscreendir/calibration_screen
+        cat /data/ts-calibration > $touchscreendir/calibration_points
+else
+        echo "Using Default Calibration Values"
+	cat /sys/android_tp_cal/tp_cal > /data/ts-calibration
+        cat /data/ts-calibration > $touchscreendir/calibration_points
+fi
+
+mkdir /dev/msm_camera
+mknod /dev/msm_camera/control0 c 250 0
+mknod /dev/msm_camera/config0 c 250 1
+mknod /dev/msm_camera/frame0 c 250 2
+
+[ -f "/data/serialno" ] || echo -e `cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 12 | head -n 1` >/data/serialno
+
+}
+doLog 2>&1 | /sbin/tee -a /chargelog.txt	
+
+if [ "$REASON" != "POWERON_CHARGING" ] ; then
+	exec /init.recovery
+fi
+
